@@ -1,14 +1,5 @@
-[package]
-name = "muxr"
-version = "0.1.0"
-authors = ["Sam Wilson <tecywiz121@hotmail.com>"]
-
-[dependencies]
-bincode = "1.0.1"
-bitflags = "1.0.3"
-error-chain = "0.12.0"
-ndarray = { version = "0.11.2", features = ["serde-1"] }
-serde = "1.0.70"
-serde_derive = "1.0.70"
-termion = "1.5.1"
-vte = "0.3.2"
+[workspace]
+members = [
+    "muxr",
+    "muxr_client",
+]

@@ -1,8 +1,10 @@
-extern crate bincode;
+#[macro_use]
+extern crate error_chain;
 extern crate muxr;
 extern crate termion;
 
-use bincode::{serialize, deserialize};
+mod error;
+mod render;
 
 use muxr::state::{State, Color, CellStyle};
 
@@ -33,7 +35,7 @@ fn main() {
         cell.content = Some('b');
     }
 
-    state.render(&mut raw, rows, cols).unwrap();
+    render::render(&state, &mut raw, rows, cols).unwrap();
 
     raw.flush().unwrap();
 }
