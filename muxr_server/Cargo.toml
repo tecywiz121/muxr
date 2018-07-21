@@ -1,0 +1,16 @@
+[package]
+name = "muxr_server"
+version = "0.1.0"
+authors = ["Sam Wilson <tecywiz121@hotmail.com>"]
+
+[dependencies]
+daemonize = "0.3.0"
+error-chain = "0.12.0"
+lazy_static = "1.0.2"
+mio = "0.6.15"
+muxr = { version = "0.1.0", path = "../muxr" }
+nix = "0.11.0"
+vte = "0.3.2"
+
+[build-dependencies]
+cc = "1.0.18"

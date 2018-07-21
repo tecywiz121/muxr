@@ -2,4 +2,5 @@
 members = [
     "muxr",
     "muxr_client",
+    "muxr_server",
 ]
