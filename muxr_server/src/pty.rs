@@ -15,52 +15,6 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-mod fd {
-    use nix::unistd::close;
-
-    use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-
-    pub struct Fd(Option<RawFd>);
-
-    impl Fd {
-        pub fn new(fd: RawFd) -> Self {
-            Fd(Some(fd))
-        }
-    }
-
-    impl FromRawFd for Fd {
-        unsafe fn from_raw_fd(fd: RawFd) -> Self {
-            Fd::new(fd)
-        }
-    }
-
-    impl AsRawFd for Fd {
-        fn as_raw_fd(&self) -> RawFd {
-            match self.0 {
-                Some(x) => x,
-                None => unreachable!(),
-            }
-        }
-    }
-
-    impl IntoRawFd for Fd {
-        fn into_raw_fd(mut self) -> RawFd {
-            match self.0.take() {
-                Some(x) => x,
-                None => unreachable!(),
-            }
-        }
-    }
-
-    impl Drop for Fd {
-        fn drop(&mut self) {
-            if let Some(x) = self.0.take() {
-                close(x).ok();
-            }
-        }
-    }
-}
-
 mod pts_namer {
     use error::*;
 
@@ -88,7 +42,6 @@ mod pts_namer {
     }
 }
 
-use self::fd::Fd;
 use self::pts_namer::ptsname;
 
 pub fn pair() -> Result<(Master, File)> {
