@@ -1,11 +1,11 @@
 use error::*;
 
-use mio::{Token, PollOpt, Poll, Ready};
 use mio::event::Evented;
 use mio::unix::EventedFd;
+use mio::{Poll, PollOpt, Ready, Token};
 
-use nix::fcntl::{self, OFlag, open};
-use nix::pty::{PtyMaster, posix_openpt, grantpt, unlockpt};
+use nix::fcntl::{self, open, OFlag};
+use nix::pty::{grantpt, posix_openpt, unlockpt, PtyMaster};
 use nix::sys::stat::Mode;
 
 use std::fs::File;
@@ -64,7 +64,7 @@ mod fd {
 mod pts_namer {
     use error::*;
 
-    use nix::pty::{PtyMaster, ptsname as unsafe_ptsname};
+    use nix::pty::{ptsname as unsafe_ptsname, PtyMaster};
 
     use std::sync::Mutex;
 
@@ -99,7 +99,11 @@ pub fn pair() -> Result<(Master, File)> {
 
     let slave_name = ptsname(&master)?;
 
-    let slave_fd = open(Path::new(&slave_name), OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty())?;
+    let slave_fd = open(
+        Path::new(&slave_name),
+        OFlag::O_RDWR | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
     let slave = unsafe { File::from_raw_fd(slave_fd) };
 
     Ok((Master(master), slave))
@@ -108,15 +112,23 @@ pub fn pair() -> Result<(Master, File)> {
 pub struct Master(PtyMaster);
 
 impl Evented for Master {
-    fn register(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-        -> io::Result<()>
-    {
+    fn register(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.0.as_raw_fd()).register(poll, token, interest, opts)
     }
 
-    fn reregister(&self, poll: &Poll, token: Token, interest: Ready, opts: PollOpt)
-        -> io::Result<()>
-    {
+    fn reregister(
+        &self,
+        poll: &Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
         EventedFd(&self.0.as_raw_fd()).reregister(poll, token, interest, opts)
     }
 

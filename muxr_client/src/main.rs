@@ -6,12 +6,12 @@ extern crate termion;
 mod error;
 mod render;
 
-use muxr::state::{State, Color, CellStyle};
+use muxr::state::{CellStyle, Color, State};
 
 use std::io::Write;
 
-use termion::{get_tty, terminal_size};
 use termion::raw::IntoRawMode;
+use termion::{get_tty, terminal_size};
 
 fn main() {
     let mut state = State::default();

@@ -1,6 +1,6 @@
 use error::*;
 
-use muxr::state::{State, Cell, Color, CellStyle};
+use muxr::state::{Cell, CellStyle, Color, State};
 
 use std::io::Write;
 

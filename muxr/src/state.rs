@@ -23,8 +23,18 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Self = Color { _p: (), r: 0, g: 0, b: 0 };
-    pub const WHITE: Self = Color { _p: (), r: 255, g: 255, b: 255 };
+    pub const BLACK: Self = Color {
+        _p: (),
+        r: 0,
+        g: 0,
+        b: 0,
+    };
+    pub const WHITE: Self = Color {
+        _p: (),
+        r: 255,
+        g: 255,
+        b: 255,
+    };
 
     pub fn new(r: u8, g: u8, b: u8) -> Self {
         Color { _p: (), r, g, b }
@@ -128,7 +138,6 @@ impl State {
         background: Color::BLACK,
         content: Some('.'),
     };
-
 
     pub fn cell(&self, row: u16, col: u16) -> &Cell {
         match self.cells.get([col as usize, row as usize]) {
