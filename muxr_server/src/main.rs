@@ -59,7 +59,7 @@ fn run() -> Result<()> {
         .status()
         .unwrap();
 
-    let (writer, reader) = master.framed(term::VteCodec::new()).split();
+    let (writer, reader) = master.framed(term::codec::VteCodec::new()).split();
 
     let app = reader
         .for_each(|item| {
