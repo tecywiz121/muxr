@@ -10,6 +10,7 @@ extern crate mio;
 extern crate muxr;
 extern crate nix;
 extern crate tokio;
+extern crate tokio_codec;
 extern crate tokio_io;
 extern crate vte;
 
@@ -24,6 +25,9 @@ use std::fs::File;
 use std::process::Command;
 
 use tokio::prelude::*;
+
+use tokio_codec::Framed;
+
 
 fn main() {
     if let Err(ref e) = run() {
@@ -59,7 +63,7 @@ fn run() -> Result<()> {
         .status()
         .unwrap();
 
-    let (writer, reader) = master.framed(term::codec::VteCodec::new()).split();
+    let (writer, reader) = Framed::new(master, term::codec::VteCodec::new()).split();
 
     let app = reader
         .for_each(|item| {

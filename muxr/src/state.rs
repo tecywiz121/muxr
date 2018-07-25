@@ -1,5 +1,60 @@
 use ndarray::Array2;
 
+#[derive(
+    From,
+    Into,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Add,
+    Sub,
+    AddAssign,
+    SubAssign,
+    Mul,
+    MulAssign,
+    Div,
+    DivAssign,
+    Serialize,
+    Deserialize,
+)]
+pub struct Row(pub u16);
+
+impl Row {
+    fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(
+    From,
+    Into,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Add,
+    Sub,
+    AddAssign,
+    SubAssign,
+    Mul,
+    MulAssign,
+    Div,
+    DivAssign,
+    Serialize,
+    Deserialize,
+)]
+pub struct Col(pub u16);
+
+impl Col {
+    fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CursorStyle {
     Block,
@@ -41,19 +96,11 @@ impl Color {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Position {
-    _p: (),
-
-    pub row: u16,
-    pub col: u16,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cursor {
     _p: (),
 
-    pub position: Position,
+    pub position: (Row, Col),
     pub color: Color,
     pub style: CursorStyle,
     pub visible: bool,
@@ -63,7 +110,7 @@ impl Default for Cursor {
     fn default() -> Self {
         Cursor {
             _p: (),
-            position: Position::default(),
+            position: (Row(0), Col(0)),
             color: Color::WHITE,
             style: CursorStyle::default(),
             visible: true,
@@ -116,15 +163,17 @@ impl Default for Cell {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
-    cursor: Cursor,
-
     cells: Array2<Cell>,
+    top: usize,
+
+    pub cursor: Cursor,
 }
 
 impl Default for State {
     fn default() -> Self {
         State {
             cursor: Cursor::default(),
+            top: 0,
             cells: Array2::default((80, 24)),
         }
     }
@@ -139,14 +188,22 @@ impl State {
         content: Some('.'),
     };
 
-    pub fn cell(&self, row: u16, col: u16) -> &Cell {
-        match self.cells.get([col as usize, row as usize]) {
+    pub fn cell(&self, row: Row, col: Col) -> &Cell {
+        match self.cells.get([col.as_usize(), row.as_usize()]) {
             Some(ref c) => c,
             None => &State::OUT_OF_BOUNDS,
         }
     }
 
-    pub fn cell_mut(&mut self, row: u16, col: u16) -> Option<&mut Cell> {
-        self.cells.get_mut([col as usize, row as usize])
+    pub fn cell_mut(&mut self, row: Row, col: Col) -> Option<&mut Cell> {
+        self.cells.get_mut([col.as_usize(), row.as_usize()])
+    }
+
+    pub fn rows(&self) -> Row {
+        Row::from(self.cells.dim().1 as u16)
+    }
+
+    pub fn columns(&self) -> Col {
+        Col::from(self.cells.dim().0 as u16)
     }
 }

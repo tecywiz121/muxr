@@ -1,74 +1,13 @@
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::BytesMut;
 
 use error::*;
-
-use muxr::state::{Color, CursorStyle};
+use term::*;
 
 use std::collections::VecDeque;
 
 use tokio_io::codec::{Decoder, Encoder};
 
 use vte::{Parser, Perform};
-
-#[derive(Debug, Clone)]
-pub enum ToTerm {
-    Bytes(BytesMut),
-}
-
-#[derive(Debug, Clone)]
-pub enum FromTerm {
-    // SetTitle
-    // SetMouseCursor
-    SetCursorStyle(CursorStyle),
-    Print(char),
-    Goto { row: u16, col: u16 },
-    GotoRow(u16),
-    GotoCol(u16),
-    // InsertBlank
-    MoveUp(u16),
-    MoveDown(u16),
-    // IdentifyTerminal
-    // DeviceStatus
-    MoreForward(u16),
-    MoveBackward(u16),
-    MoveDownAndReturn(u16),
-    MoveUpAndReturn(u16),
-    PutTab(i64),
-    Backspace,
-    CarriageReturn,
-    Linefeed,
-    // Bell
-    // Substitute
-    Newline,
-    // SetHorizontalTabstop,
-    // ScrollUp(u16),
-    // ScrollDown(u16),
-    // InsertBlankLines(u16),
-    // DeleteLines(u16),
-    // EraseChars(u16),
-    // DeleteChars(u16),
-    // MoveBackwardTabs(i64),
-    // MoveForwardTabs(i64),
-    // SaveCursorPositon,
-    // RestoreCursorPosition,
-    // ClearLine,
-    // ClearScreen,
-    // ClearTabs,
-    // ResetState,
-    // ReverseIndex,
-    // TerminalAttribute,
-    // SetMode,
-    // UnsetMode,
-    // SetScrollingRegion,
-    // set_keypad_application_mode
-    // unset_keypad_application_mode
-    // set_active_charset
-    // configure_charset
-    SetColor(usize, Color),
-    ResetColor(usize),
-    // SetClipboard
-    // Dectest
-}
 
 #[derive(Debug, Default)]
 struct Performer {
