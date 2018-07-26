@@ -73,6 +73,8 @@ mod sealed {
         fn goto_row(&mut self, row: Row) -> Result<()>;
         fn goto_col(&mut self, row: Col) -> Result<()>;
         fn print(&mut self, c: char) -> Result<()>;
+        fn carriage_return(&mut self) -> Result<()>;
+        fn linefeed(&mut self) -> Result<()>;
     }
 }
 
@@ -93,6 +95,8 @@ where
             GotoRow(row) => self.goto_row(row),
             GotoCol(col) => self.goto_col(col),
             Print(c) => self.print(c),
+            CarriageReturn => self.carriage_return(),
+            Linefeed => self.linefeed(),
             _ => unimplemented!(),
         }
     }
@@ -132,6 +136,16 @@ impl StateEx for State {
             self.cursor.position.1 += Col(1);
         }
 
+        Ok(())
+    }
+
+    fn carriage_return(&mut self) -> Result<()> {
+        self.cursor.position.1 = Col(0);
+        Ok(())
+    }
+
+    fn linefeed(&mut self) -> Result<()> {
+        self.cursor.position.0 += Row(1);
         Ok(())
     }
 }
