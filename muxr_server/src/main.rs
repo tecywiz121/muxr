@@ -20,6 +20,9 @@ mod term;
 
 use error::*;
 use pty::CommandTty;
+use term::Apply;
+
+use muxr::state::State;
 
 use std::fs::File;
 use std::process::Command;
@@ -64,13 +67,17 @@ fn run() -> Result<()> {
 
     let (writer, reader) = Framed::new(master, term::codec::VteCodec::new()).split();
 
+    let mut state = State::default();
+
     let app = reader
-        .for_each(|item| {
+        .for_each(move |item| {
             println!("TRM: {:?}", item);
+            state.apply(item)?;
             Ok(())
         })
         .map_err(|x| println!("ERR: {}", x));
 
     tokio::run(app);
+
     Ok(())
 }

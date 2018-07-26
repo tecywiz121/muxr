@@ -193,6 +193,14 @@ impl Default for State {
 }
 
 impl State {
+    pub fn with_dimensions(rows: Row, cols: Col) -> Self {
+        Self {
+            cursor: Cursor::default(),
+            top: 0,
+            cells: Array2::default((rows.0 as usize, cols.0 as usize)),
+        }
+    }
+
     pub fn cell(&self, row: Row, col: Col) -> Option<&Cell> {
         self.cells.get([row.realize(self)?, col.realize(self)?])
     }
