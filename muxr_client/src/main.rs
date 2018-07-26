@@ -6,7 +6,7 @@ extern crate termion;
 mod error;
 mod render;
 
-use muxr::state::{CellStyle, Color, State, Row, Col};
+use muxr::state::{CellStyle, Col, Color, Row, State};
 
 use std::io::Write;
 
@@ -32,7 +32,7 @@ fn main() {
     {
         let cell = state.cell_mut(Row(6), Col(0)).unwrap();
         cell.foreground = Color::new(0, 255, 0);
-        cell.content = Some('b');
+        cell.content = Some('c');
     }
 
     render::render(&state, &mut raw, Row(rows), Col(cols)).unwrap();

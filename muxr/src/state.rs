@@ -1,5 +1,7 @@
 use ndarray::Array2;
 
+use std::cmp;
+
 #[derive(
     From,
     Into,
@@ -16,14 +18,20 @@ use ndarray::Array2;
     MulAssign,
     Div,
     DivAssign,
+    Ord,
+    PartialOrd,
     Serialize,
     Deserialize,
 )]
 pub struct Row(pub u16);
 
 impl Row {
-    fn as_usize(&self) -> usize {
-        self.0 as usize
+    fn realize(self, state: &State) -> Option<usize> {
+        if self >= state.rows() {
+            None
+        } else {
+            Some((self.0 as usize + state.top) % state.rows().0 as usize)
+        }
     }
 }
 
@@ -43,17 +51,22 @@ impl Row {
     MulAssign,
     Div,
     DivAssign,
+    Ord,
+    PartialOrd,
     Serialize,
     Deserialize,
 )]
 pub struct Col(pub u16);
 
 impl Col {
-    fn as_usize(&self) -> usize {
-        self.0 as usize
+    fn realize(self, state: &State) -> Option<usize> {
+        if self >= state.columns() {
+            None
+        } else {
+            Some(self.0 as usize)
+        }
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CursorStyle {
@@ -174,36 +187,37 @@ impl Default for State {
         State {
             cursor: Cursor::default(),
             top: 0,
-            cells: Array2::default((80, 24)),
+            cells: Array2::default((24, 80)),
         }
     }
 }
 
 impl State {
-    const OUT_OF_BOUNDS: Cell = Cell {
-        _p: (),
-        style: CellStyle::REVERSE,
-        foreground: Color::BLACK,
-        background: Color::BLACK,
-        content: Some('.'),
-    };
-
-    pub fn cell(&self, row: Row, col: Col) -> &Cell {
-        match self.cells.get([col.as_usize(), row.as_usize()]) {
-            Some(ref c) => c,
-            None => &State::OUT_OF_BOUNDS,
-        }
+    pub fn cell(&self, row: Row, col: Col) -> Option<&Cell> {
+        self.cells.get([row.realize(self)?, col.realize(self)?])
     }
 
     pub fn cell_mut(&mut self, row: Row, col: Col) -> Option<&mut Cell> {
-        self.cells.get_mut([col.as_usize(), row.as_usize()])
+        let rcol = col.realize(self)?;
+        let rrow = row.realize(self)?;
+
+        self.cells.get_mut([rrow, rcol])
     }
 
     pub fn rows(&self) -> Row {
-        Row::from(self.cells.dim().1 as u16)
+        Row::from(self.cells.dim().0 as u16)
     }
 
     pub fn columns(&self) -> Col {
-        Col::from(self.cells.dim().0 as u16)
+        Col::from(self.cells.dim().1 as u16)
+    }
+
+    pub fn scroll_down(&mut self, rows: Row) {
+        let to_clear = cmp::min(rows, self.rows());
+
+        for _ in 0..to_clear.0 {
+            self.cells.row_mut(self.top).fill(Cell::default());
+            self.top += 1;
+        }
     }
 }

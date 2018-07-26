@@ -28,7 +28,6 @@ use tokio::prelude::*;
 
 use tokio_codec::Framed;
 
-
 fn main() {
     if let Err(ref e) = run() {
         use error_chain::ChainedError;

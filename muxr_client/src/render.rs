@@ -1,6 +1,6 @@
 use error::*;
 
-use muxr::state::{Cell, CellStyle, Color, State, Row, Col};
+use muxr::state::{Cell, CellStyle, Col, Color, Row, State};
 
 use std::io::Write;
 
@@ -73,6 +73,12 @@ impl WriteDelta for Cell {
 }
 
 pub fn render<W: Write>(state: &State, w: &mut W, rows: Row, cols: Col) -> Result<()> {
+    let mut oob = Cell::default();
+    oob.style = CellStyle::REVERSE;
+    oob.foreground = Color::BLACK;
+    oob.background = Color::BLACK;
+    oob.content = Some('.');
+
     let first = Cell::default();
     let mut prev = &first;
 
@@ -80,7 +86,7 @@ pub fn render<W: Write>(state: &State, w: &mut W, rows: Row, cols: Col) -> Resul
         write!(w, "{}", t::cursor::Goto(1, row + 1))?;
 
         for col in 0..cols.0 {
-            let cell = state.cell(Row(row), Col(col));
+            let cell = state.cell(Row(row), Col(col)).unwrap_or(&oob);
             cell.write_delta(prev, w)?;
             write!(w, "{}", cell.content.unwrap_or(' '))?;
             prev = cell;

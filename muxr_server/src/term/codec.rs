@@ -177,7 +177,6 @@ pub mod C0 {
     pub const DEL: u8 = 0x7f;
 }
 
-
 /// C1 set of 8-bit control characters (from ANSI X3.64-1979)
 /// Stolen from https://github.com/jwilm/alacritty/blob/96b3d737a8ee1805ec548671a6ba8f219b2c2934/src/ansi.rs
 ///

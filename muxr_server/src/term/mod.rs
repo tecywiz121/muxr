@@ -4,8 +4,7 @@ use bytes::BytesMut;
 
 use error::*;
 
-use muxr::state::{Color, CursorStyle, State as MuxrState, Row, Col};
-
+use muxr::state::{Col, Color, CursorStyle, Row, State as MuxrState};
 
 #[derive(Debug, Clone)]
 pub enum ToTerm {
