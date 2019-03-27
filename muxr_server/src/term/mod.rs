@@ -2,7 +2,7 @@ pub mod codec;
 
 use bytes::BytesMut;
 
-use error::*;
+use crate::error::*;
 
 use muxr::state::{Col, Color, CursorStyle, Row, State};
 
@@ -89,7 +89,7 @@ where
     T: StateEx,
 {
     fn apply(&mut self, msg: FromTerm) -> Result<()> {
-        use term::FromTerm::*;
+        use self::FromTerm::*;
 
         match msg {
             GotoRow(row) => self.goto_row(row),

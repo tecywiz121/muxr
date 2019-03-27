@@ -14,9 +14,12 @@ extern crate tokio_codec;
 extern crate tokio_io;
 extern crate vte;
 
+mod config;
 mod error;
 mod pty;
+mod server;
 mod term;
+mod uds;
 
 use error::*;
 use pty::CommandTty;
@@ -25,6 +28,7 @@ use term::Apply;
 use muxr::state::State;
 
 use std::fs::File;
+use std::path::PathBuf;
 use std::process::Command;
 
 use tokio::prelude::*;
@@ -43,6 +47,22 @@ fn run() -> Result<()> {
         .start()
         .chain_err(|| "unable to daemonize")?;
 
+    let config = config::Server {
+        socket_path: PathBuf::from("/tmp/muxr.sock"),
+    };
+
+    let mut server = server::Server::new(config);
+
+    server.start()?;
+
+    std::thread::sleep(std::time::Duration::from_secs(300));
+
+    server.stop()?;
+
+    Ok(())
+}
+
+fn old_run() {
     println!("creating pty");
 
     let (master, slave) = pty::pair().unwrap();
@@ -68,6 +88,4 @@ fn run() -> Result<()> {
         .map_err(|x| println!("ERR: {}", x));
 
     tokio::run(app);
-
-    Ok(())
 }

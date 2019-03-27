@@ -1,4 +1,4 @@
-use error::*;
+use crate::error::*;
 
 use bytes::BufMut;
 
@@ -24,7 +24,7 @@ use tokio::prelude::*;
 use tokio::reactor::PollEvented2;
 
 mod pts_namer {
-    use error::*;
+    use crate::error::*;
 
     use nix::pty::{ptsname as unsafe_ptsname, PtyMaster};
 

@@ -1,7 +1,7 @@
 use bytes::BytesMut;
 
-use error::*;
-use term::*;
+use crate::error::*;
+use crate::term::*;
 
 use std::collections::VecDeque;
 
