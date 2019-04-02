@@ -7,7 +7,7 @@ use nix::sys::socket::{
 use nix::sys::time::{TimeSpec, TimeValLike};
 use nix::unistd::close;
 
-use std::net::SocketAddr;
+use std::io;
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -37,7 +37,11 @@ impl Listener {
     pub fn bind<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
 
-        std::fs::remove_file(path)?;
+        if let Err(e) = std::fs::remove_file(path) {
+            if e.kind() != io::ErrorKind::NotFound {
+                bail!(e);
+            }
+        }
 
         let fd = socket(
             AddressFamily::Unix,

@@ -2,10 +2,13 @@ use crate::error::*;
 use crate::uds::Listener;
 
 use std::os::unix::net::UnixStream;
+use std::os::unix::io::AsRawFd;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use std::thread;
 
 use super::{State, Status};
+use super::client;
 
 #[derive(Debug)]
 pub struct Acceptor {
@@ -31,8 +34,23 @@ impl Acceptor {
     }
 
     fn accept(&self, accepted: UnixStream) -> Result<()> {
-        println!("Accepted: {:?}", accepted);
-        unimplemented!();
+        let fd = accepted.as_raw_fd();
+        let (sender, mut receiver) = client::pair(self.state.clone(), accepted)?;
+
+        let mut state = self.state.write().expect("state lock poisoned");
+
+        let started = state.started_mut().chain_err(|| "not started")?;
+
+        started.clients.push(sender);
+
+        let thread = thread::Builder::new()
+            .name(format!("client-{}", fd))
+            .spawn(move || receiver.run())
+            .chain_err(|| "unable to start client thread")?;
+
+        started.client_threads.push(thread);
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<()> {

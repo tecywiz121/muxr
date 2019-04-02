@@ -1,21 +1,36 @@
 mod acceptor;
+mod client;
 
 use crate::config;
 use crate::error::*;
 
 use self::acceptor::Acceptor;
 
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 
 #[derive(Debug)]
-struct Threads {
+struct Started {
     acceptor: JoinHandle<Result<()>>,
+
+    client_threads: Vec<JoinHandle<Result<()>>>,
+    clients: Vec<client::Sender>,
 }
 
-impl Threads {
+impl Started {
     fn join_all(self) -> thread::Result<Result<()>> {
-        self.acceptor.join()
+        if let Err(e) = self.acceptor.join()? {
+            return Ok(Err(e));
+        }
+
+        for client in self.client_threads.into_iter() {
+            if let Err(e) = client.join()? {
+                return Ok(Err(e));
+            }
+        }
+
+        Ok(Ok(()))
     }
 }
 
@@ -25,7 +40,7 @@ enum Status {
     Stopping,
 
     Starting,
-    Started(Threads),
+    Started(Started),
 }
 
 impl Status {
@@ -64,6 +79,15 @@ pub struct State {
     status: Status,
 }
 
+impl State {
+    fn started_mut(&mut self) -> Option<&mut Started> {
+        match self.status {
+            Status::Started(ref mut started) => Some(started),
+            _ => None
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Server {
     state: Arc<RwLock<State>>,
@@ -97,11 +121,13 @@ impl Server {
             .spawn(move || acceptor.run())
             .chain_err(|| "unable to start acceptor thread")?;
 
-        let threads = Threads {
+        let started = Started {
             acceptor: acceptor_handle,
+            clients: vec![],
+            client_threads: vec![],
         };
 
-        state.status = Status::Started(threads);
+        state.status = Status::Started(started);
 
         Ok(())
     }
