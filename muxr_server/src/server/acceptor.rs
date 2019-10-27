@@ -1,14 +1,14 @@
 use crate::error::*;
 use crate::uds::Listener;
 
-use std::os::unix::net::UnixStream;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
-use super::{State, Status};
 use super::client;
+use super::{State, Status};
 
 #[derive(Debug)]
 pub struct Acceptor {

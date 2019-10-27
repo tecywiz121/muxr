@@ -83,7 +83,7 @@ impl State {
     fn started_mut(&mut self) -> Option<&mut Started> {
         match self.status {
             Status::Started(ref mut started) => Some(started),
-            _ => None
+            _ => None,
         }
     }
 }

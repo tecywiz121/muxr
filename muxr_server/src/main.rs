@@ -1,5 +1,3 @@
-#![feature(optin_builtin_traits)]
-
 extern crate bytes;
 extern crate daemonize;
 #[macro_use]

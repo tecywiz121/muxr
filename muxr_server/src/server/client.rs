@@ -1,11 +1,11 @@
 use crate::error::*;
 
-use std::time::Duration;
 use std::io::Read;
-use std::sync::{Arc, RwLock};
 use std::os::unix::net::UnixStream;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
-use super::{Status, State};
+use super::{State, Status};
 
 #[derive(Debug)]
 pub struct Sender {
@@ -24,9 +24,15 @@ pub fn pair(state: Arc<RwLock<State>>, socket: UnixStream) -> Result<(Sender, Re
 
     let recv_sock = socket.try_clone()?;
 
-    let sender = Sender { socket, state: state.clone() };
+    let sender = Sender {
+        socket,
+        state: state.clone(),
+    };
 
-    let receiver = Receiver { socket: recv_sock, state };
+    let receiver = Receiver {
+        socket: recv_sock,
+        state,
+    };
 
     Ok((sender, receiver))
 }

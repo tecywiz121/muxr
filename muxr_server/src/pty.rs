@@ -28,11 +28,16 @@ mod pts_namer {
 
     use nix::pty::{ptsname as unsafe_ptsname, PtyMaster};
 
+    use static_assertions::assert_not_impl_any;
+
+    use std::marker::PhantomData;
     use std::sync::Mutex;
 
-    struct PtsNamer;
+    #[derive(Debug, Default)]
+    struct PtsNamer(PhantomData<*mut ()>);
 
-    impl !Sync for PtsNamer {}
+    unsafe impl Send for PtsNamer {}
+    assert_not_impl_any!(PtsNamer: Sync);
 
     impl PtsNamer {
         fn ptsname(&self, master: &PtyMaster) -> Result<String> {
@@ -42,7 +47,7 @@ mod pts_namer {
     }
 
     lazy_static! {
-        static ref PTS_NAMER: Mutex<PtsNamer> = Mutex::new(PtsNamer);
+        static ref PTS_NAMER: Mutex<PtsNamer> = Mutex::default();
     }
 
     pub fn ptsname(master: &PtyMaster) -> Result<String> {
