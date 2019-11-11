@@ -1,5 +1,3 @@
-pub mod codec;
-
 use bytes::BytesMut;
 
 use crate::error::*;

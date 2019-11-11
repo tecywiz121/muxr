@@ -12,9 +12,6 @@ lazy_static = "1.0.2"
 mio = "0.6.15"
 muxr = { version = "0.1.0", path = "../muxr" }
 nix = "0.15.0"
-tokio = "0.1.7"
-tokio-codec = "0.1.0"
-tokio-io = "0.1.7"
 vte = "0.3.2"
 static_assertions = "1.0.0"
 

@@ -7,9 +7,6 @@ extern crate lazy_static;
 extern crate mio;
 extern crate muxr;
 extern crate nix;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_io;
 extern crate vte;
 
 mod config;
@@ -28,10 +25,6 @@ use muxr::state::State;
 use std::fs::File;
 use std::path::PathBuf;
 use std::process::Command;
-
-use tokio::prelude::*;
-
-use tokio_codec::Framed;
 
 quick_main!(run);
 
@@ -60,7 +53,8 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn old_run() {
+#[cfg(old)]
+fn run() {
     println!("creating pty");
 
     let (master, slave) = pty::pair().unwrap();
