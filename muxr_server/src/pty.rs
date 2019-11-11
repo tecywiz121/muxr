@@ -1,7 +1,5 @@
 use crate::error::*;
 
-use bytes::BufMut;
-
 use mio::event::Evented;
 use mio::unix::EventedFd;
 use mio::{Poll, PollOpt, Ready, Token};
@@ -18,10 +16,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
-use std::result::Result as StdResult;
 
-use tokio::prelude::*;
-use tokio::reactor::PollEvented2;
+use tokio::net::process::Command as TokioCommand;
 
 mod pts_namer {
     use crate::error::*;
@@ -72,64 +68,37 @@ pub fn pair() -> Result<(Master, File)> {
     )?;
     let slave = unsafe { File::from_raw_fd(slave_fd) };
 
-    let master = Master {
-        io: PollEvented2::new(InnerMaster(master)),
-    };
+    let master = Master(master);
 
     Ok((master, slave))
 }
 
-pub struct Master {
-    io: PollEvented2<InnerMaster>,
-}
+#[derive(Debug)]
+pub struct Master(PtyMaster);
 
-impl io::Write for Master {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.io.write(buffer)
+impl Master {
+    fn read(&self, buffer: &mut [u8]) -> io::Result<usize> {
+        match unistd::read(self.0.as_raw_fd(), buffer) {
+            Ok(sz) => Ok(sz),
+            Err(NixError::Sys(e)) => Err(io::Error::from_raw_os_error(e as i32)),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        }
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.io.flush()
-    }
-}
-
-impl AsyncWrite for Master {
-    fn shutdown(&mut self) -> StdResult<Async<()>, io::Error> {
-        self.io.shutdown()
+    fn write(&self, buffer: &[u8]) -> io::Result<usize> {
+        match unistd::write(self.0.as_raw_fd(), buffer) {
+            Ok(sz) => Ok(sz),
+            Err(NixError::Sys(e)) => Err(io::Error::from_raw_os_error(e as i32)),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        }
     }
 
-    fn poll_write(&mut self, buf: &[u8]) -> StdResult<Async<usize>, io::Error> {
-        self.io.poll_write(buf)
-    }
-
-    fn poll_flush(&mut self) -> StdResult<Async<()>, io::Error> {
-        self.io.poll_flush()
+    fn flush(&self) -> io::Result<()> {
+        Ok(())
     }
 }
 
-impl io::Read for Master {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        self.io.read(buffer)
-    }
-}
-
-impl AsyncRead for Master {
-    unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
-        self.io.prepare_uninitialized_buffer(buf)
-    }
-
-    fn poll_read(&mut self, buf: &mut [u8]) -> StdResult<Async<usize>, io::Error> {
-        self.io.poll_read(buf)
-    }
-
-    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> StdResult<Async<usize>, io::Error> {
-        self.io.read_buf(buf)
-    }
-}
-
-struct InnerMaster(PtyMaster);
-
-impl Evented for InnerMaster {
+impl Evented for Master {
     fn register(
         &self,
         poll: &Poll,
@@ -155,27 +124,35 @@ impl Evented for InnerMaster {
     }
 }
 
-impl io::Read for InnerMaster {
+impl io::Read for &Master {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        match unistd::read(self.0.as_raw_fd(), buffer) {
-            Ok(sz) => Ok(sz),
-            Err(NixError::Sys(e)) => Err(io::Error::from_raw_os_error(e as i32)),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        Master::read(self, buffer)
     }
 }
 
-impl io::Write for InnerMaster {
+impl io::Write for &Master {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        match unistd::write(self.0.as_raw_fd(), buffer) {
-            Ok(sz) => Ok(sz),
-            Err(NixError::Sys(e)) => Err(io::Error::from_raw_os_error(e as i32)),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-        }
+        Master::write(self, buffer)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+        Master::flush(self)
+    }
+}
+
+impl io::Read for Master {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        Master::read(self, buffer)
+    }
+}
+
+impl io::Write for Master {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        Master::write(self, buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Master::flush(self)
     }
 }
 
@@ -206,10 +183,10 @@ impl CommandTty for Command {
         let stdout = file.try_clone()?;
         let stderr = file.try_clone()?;
 
-        self.stdin(stdin)
-            .stdout(stdout)
-            .stderr(stderr)
-            .before_exec(move || {
+        self.stdin(stdin).stdout(stdout).stderr(stderr);
+
+        unsafe {
+            self.pre_exec(move || {
                 match unistd::setsid() {
                     Ok(_) => (),
                     Err(NixError::Sys(e)) => {
@@ -220,6 +197,33 @@ impl CommandTty for Command {
 
                 set_tty(&file)
             });
+        }
+
+        Ok(self)
+    }
+}
+
+impl CommandTty for TokioCommand {
+    fn tty(&mut self, file: File) -> io::Result<&mut Self> {
+        let stdin = file.try_clone()?;
+        let stdout = file.try_clone()?;
+        let stderr = file.try_clone()?;
+
+        self.stdin(stdin).stdout(stdout).stderr(stderr);
+
+        unsafe {
+            self.pre_exec(move || {
+                match unistd::setsid() {
+                    Ok(_) => (),
+                    Err(NixError::Sys(e)) => {
+                        return Err(io::Error::from_raw_os_error(e as i32));
+                    }
+                    _ => return Err(io::Error::last_os_error()),
+                }
+
+                set_tty(&file)
+            });
+        }
 
         Ok(self)
     }

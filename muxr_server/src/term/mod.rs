@@ -1,166 +1,258 @@
-pub mod codec;
-
-use bytes::BytesMut;
-
 use crate::error::*;
+use crate::pty;
 
-use muxr::state::{Col, Color, CursorStyle, Row, State};
+use muxr::state::State;
 
-#[derive(Debug, Clone)]
-pub enum ToTerm {
-    Bytes(BytesMut),
+use std::sync::Arc;
+
+use tokio::io::AsyncReadExt;
+use tokio::sync::Mutex;
+
+use tokio_io::split::ReadHalf;
+
+use tokio_net::util::PollEvented;
+
+use vte::{Parser, Perform};
+
+#[derive(Debug)]
+pub struct Term {
+    state: Arc<Mutex<State>>,
+    master: pty::Master,
 }
 
-#[derive(Debug, Clone)]
-pub enum FromTerm {
-    // SetTitle
-    // SetMouseCursor
-    SetCursorStyle(CursorStyle),
-    Print(char),
-    Goto { row: Row, col: Col },
-    GotoRow(Row),
-    GotoCol(Col),
-    // InsertBlank
-    MoveUp(Row),
-    MoveDown(Row),
-    // IdentifyTerminal
-    // DeviceStatus
-    MoreForward(Col),
-    MoveBackward(Col),
-    MoveDownAndReturn(Row),
-    MoveUpAndReturn(Row),
-    PutTab(i64),
-    Backspace,
-    CarriageReturn,
-    Linefeed,
-    // Bell
-    // Substitute
-    Newline,
-    // SetHorizontalTabstop,
-    // ScrollUp(u16),
-    // ScrollDown(u16),
-    // InsertBlankLines(u16),
-    // DeleteLines(u16),
-    // EraseChars(u16),
-    // DeleteChars(u16),
-    // MoveBackwardTabs(i64),
-    // MoveForwardTabs(i64),
-    // SaveCursorPositon,
-    // RestoreCursorPosition,
-    // ClearLine,
-    // ClearScreen,
-    // ClearTabs,
-    // ResetState,
-    // ReverseIndex,
-    // TerminalAttribute,
-    // SetMode,
-    // UnsetMode,
-    // SetScrollingRegion,
-    // set_keypad_application_mode
-    // unset_keypad_application_mode
-    // set_active_charset
-    // configure_charset
-    SetColor(usize, Color),
-    ResetColor(usize),
-    // SetClipboard
-    // Dectest
-}
-
-mod sealed {
-    use super::*;
-
-    pub trait StateEx {
-        fn goto_row(&mut self, row: Row) -> Result<()>;
-        fn goto_col(&mut self, row: Col) -> Result<()>;
-        fn print(&mut self, c: char) -> Result<()>;
-        fn carriage_return(&mut self) -> Result<()>;
-        fn linefeed(&mut self) -> Result<()>;
-    }
-}
-
-use self::sealed::StateEx;
-
-pub trait Apply {
-    fn apply(&mut self, msg: FromTerm) -> Result<()>;
-}
-
-impl<T> Apply for T
-where
-    T: StateEx,
-{
-    fn apply(&mut self, msg: FromTerm) -> Result<()> {
-        use self::FromTerm::*;
-
-        match msg {
-            GotoRow(row) => self.goto_row(row),
-            GotoCol(col) => self.goto_col(col),
-            Print(c) => self.print(c),
-            CarriageReturn => self.carriage_return(),
-            Linefeed => self.linefeed(),
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl StateEx for State {
-    fn goto_row(&mut self, row: Row) -> Result<()> {
-        self.cursor.position.0 = row;
-        Ok(())
+impl Term {
+    pub fn new(master: pty::Master, state: Arc<Mutex<State>>) -> Self {
+        Term { state, master }
     }
 
-    fn goto_col(&mut self, col: Col) -> Result<()> {
-        self.cursor.position.1 = col;
-        Ok(())
+    pub async fn run(self) -> Result<()> {
+        let evented = PollEvented::new(self.master);
+        let (read, _) = tokio::io::split(evented);
+
+        // TODO: Implement write side
+
+        Self::read_loop(self.state.clone(), read).await
     }
 
-    fn print(&mut self, c: char) -> Result<()> {
-        let (row, col) = self.cursor.position;
+    async fn read_loop(
+        state: Arc<Mutex<State>>,
+        mut read: ReadHalf<PollEvented<pty::Master>>,
+    ) -> Result<()> {
+        let mut buf = [0u8; 1024];
+        let mut parser = Parser::new();
 
-        {
-            let cell = self.cell_mut(row, col);
+        loop {
+            let len: usize = read.read(&mut buf).await?;
+            let bytes = &buf[0..len];
 
-            if let Some(cell) = cell {
-                cell.content = Some(c);
+            let mut locked = state.lock().await;
+            let mut perform = StatePerform(&mut locked);
+
+            for byte in bytes {
+                parser.advance(&mut perform, *byte);
             }
         }
+    }
+}
 
-        if col >= self.columns() - Col(1) {
-            self.cursor.position.0 += Row(1);
-            self.cursor.position.1 = Col(0);
+#[derive(Debug)]
+struct StatePerform<'a>(pub &'a mut State);
 
-            if self.cursor.position.0 >= self.rows() {
-                self.cursor.position.0 = self.rows() - Row(1);
-                self.scroll_down(Row(1));
-            }
-        } else {
-            self.cursor.position.1 += Col(1);
+impl<'a> Perform for StatePerform<'a> {
+    fn print(&mut self, c: char) {
+        self.0.print(c)
+    }
+
+    fn execute(&mut self, byte: u8) {
+        match byte {
+            C0::CR => self.0.carriage_return(),
+            C0::LF | C0::VT | C0::FF => self.0.linefeed(),
+            _ => eprintln!("[UNIMPL] execute({:02x})", byte),
         }
-
-        Ok(())
     }
 
-    fn carriage_return(&mut self) -> Result<()> {
-        self.cursor.position.1 = Col(0);
-        Ok(())
+    fn hook(&mut self, a: &[i64], b: &[u8], c: bool) {
+        eprintln!("[UNIMPL] hook({:?}, {:?}, {:?})", a, b, c);
     }
 
-    fn linefeed(&mut self) -> Result<()> {
-        self.cursor.position.0 += Row(1);
-        Ok(())
+    fn put(&mut self, _: u8) {
+        unimplemented!()
     }
+
+    fn unhook(&mut self) {
+        unimplemented!()
+    }
+
+    fn osc_dispatch(&mut self, _: &[&[u8]]) {
+        unimplemented!()
+    }
+
+    fn csi_dispatch(&mut self, _: &[i64], _: &[u8], _: bool, _: char) {
+        unimplemented!()
+    }
+
+    fn esc_dispatch(&mut self, _: &[i64], _: &[u8], _: bool, _: u8) {
+        unimplemented!()
+    }
+}
+
+/// C0 set of 7-bit control characters (from ANSI X3.4-1977).
+/// Stolen from https://github.com/jwilm/alacritty/blob/96b3d737a8ee1805ec548671a6ba8f219b2c2934/src/ansi.rs
+#[allow(non_snake_case)]
+#[allow(unused)]
+mod C0 {
+    /// Null filler, terminal should ignore this character
+    pub const NUL: u8 = 0x00;
+    /// Start of Header
+    pub const SOH: u8 = 0x01;
+    /// Start of Text, implied end of header
+    pub const STX: u8 = 0x02;
+    /// End of Text, causes some terminal to respond with ACK or NAK
+    pub const ETX: u8 = 0x03;
+    /// End of Transmission
+    pub const EOT: u8 = 0x04;
+    /// Enquiry, causes terminal to send ANSWER-BACK ID
+    pub const ENQ: u8 = 0x05;
+    /// Acknowledge, usually sent by terminal in response to ETX
+    pub const ACK: u8 = 0x06;
+    /// Bell, triggers the bell, buzzer, or beeper on the terminal
+    pub const BEL: u8 = 0x07;
+    /// Backspace, can be used to define overstruck characters
+    pub const BS: u8 = 0x08;
+    /// Horizontal Tabulation, move to next predetermined position
+    pub const HT: u8 = 0x09;
+    /// Linefeed, move to same position on next line (see also NL)
+    pub const LF: u8 = 0x0A;
+    /// Vertical Tabulation, move to next predetermined line
+    pub const VT: u8 = 0x0B;
+    /// Form Feed, move to next form or page
+    pub const FF: u8 = 0x0C;
+    /// Carriage Return, move to first character of current line
+    pub const CR: u8 = 0x0D;
+    /// Shift Out, switch to G1 (other half of character set)
+    pub const SO: u8 = 0x0E;
+    /// Shift In, switch to G0 (normal half of character set)
+    pub const SI: u8 = 0x0F;
+    /// Data Link Escape, interpret next control character specially
+    pub const DLE: u8 = 0x10;
+    /// (DC1) Terminal is allowed to resume transmitting
+    pub const XON: u8 = 0x11;
+    /// Device Control 2, causes ASR-33 to activate paper-tape reader
+    pub const DC2: u8 = 0x12;
+    /// (DC2) Terminal must pause and refrain from transmitting
+    pub const XOFF: u8 = 0x13;
+    /// Device Control 4, causes ASR-33 to deactivate paper-tape reader
+    pub const DC4: u8 = 0x14;
+    /// Negative Acknowledge, used sometimes with ETX and ACK
+    pub const NAK: u8 = 0x15;
+    /// Synchronous Idle, used to maintain timing in Sync communication
+    pub const SYN: u8 = 0x16;
+    /// End of Transmission block
+    pub const ETB: u8 = 0x17;
+    /// Cancel (makes VT100 abort current escape sequence if any)
+    pub const CAN: u8 = 0x18;
+    /// End of Medium
+    pub const EM: u8 = 0x19;
+    /// Substitute (VT100 uses this to display parity errors)
+    pub const SUB: u8 = 0x1A;
+    /// Prefix to an escape sequence
+    pub const ESC: u8 = 0x1B;
+    /// File Separator
+    pub const FS: u8 = 0x1C;
+    /// Group Separator
+    pub const GS: u8 = 0x1D;
+    /// Record Separator (sent by VT132 in block-transfer mode)
+    pub const RS: u8 = 0x1E;
+    /// Unit Separator
+    pub const US: u8 = 0x1F;
+    /// Delete, should be ignored by terminal
+    pub const DEL: u8 = 0x7f;
+}
+
+/// C1 set of 8-bit control characters (from ANSI X3.64-1979)
+/// Stolen from https://github.com/jwilm/alacritty/blob/96b3d737a8ee1805ec548671a6ba8f219b2c2934/src/ansi.rs
+///
+/// 0x80 (@), 0x81 (A), 0x82 (B), 0x83 (C) are reserved
+/// 0x98 (X), 0x99 (Y) are reserved
+/// 0x9a (Z) is 'reserved', but causes DEC terminals to respond with DA codes
+#[allow(non_snake_case)]
+#[allow(unused)]
+mod C1 {
+    /// Reserved
+    pub const PAD: u8 = 0x80;
+    /// Reserved
+    pub const HOP: u8 = 0x81;
+    /// Reserved
+    pub const BPH: u8 = 0x82;
+    /// Reserved
+    pub const NBH: u8 = 0x83;
+    /// Index, moves down one line same column regardless of NL
+    pub const IND: u8 = 0x84;
+    /// New line, moves done one line and to first column (CR+LF)
+    pub const NEL: u8 = 0x85;
+    /// Start of Selected Area to be sent to auxiliary output device
+    pub const SSA: u8 = 0x86;
+    /// End of Selected Area to be sent to auxiliary output device
+    pub const ESA: u8 = 0x87;
+    /// Horizontal Tabulation Set at current position
+    pub const HTS: u8 = 0x88;
+    /// Hor Tab Justify, moves string to next tab position
+    pub const HTJ: u8 = 0x89;
+    /// Vertical Tabulation Set at current line
+    pub const VTS: u8 = 0x8A;
+    /// Partial Line Down (subscript)
+    pub const PLD: u8 = 0x8B;
+    /// Partial Line Up (superscript)
+    pub const PLU: u8 = 0x8C;
+    /// Reverse Index, go up one line, reverse scroll if necessary
+    pub const RI: u8 = 0x8D;
+    /// Single Shift to G2
+    pub const SS2: u8 = 0x8E;
+    /// Single Shift to G3 (VT100 uses this for sending PF keys)
+    pub const SS3: u8 = 0x8F;
+    /// Device Control String, terminated by ST (VT125 enters graphics)
+    pub const DCS: u8 = 0x90;
+    /// Private Use 1
+    pub const PU1: u8 = 0x91;
+    /// Private Use 2
+    pub const PU2: u8 = 0x92;
+    /// Set Transmit State
+    pub const STS: u8 = 0x93;
+    /// Cancel character, ignore previous character
+    pub const CCH: u8 = 0x94;
+    /// Message Waiting, turns on an indicator on the terminal
+    pub const MW: u8 = 0x95;
+    /// Start of Protected Area
+    pub const SPA: u8 = 0x96;
+    /// End of Protected Area
+    pub const EPA: u8 = 0x97;
+    /// SOS
+    pub const SOS: u8 = 0x98;
+    /// SGCI
+    pub const SGCI: u8 = 0x99;
+    /// DECID - Identify Terminal
+    pub const DECID: u8 = 0x9a;
+    /// Control Sequence Introducer
+    pub const CSI: u8 = 0x9B;
+    /// String Terminator (VT125 exits graphics)
+    pub const ST: u8 = 0x9C;
+    /// Operating System Command (reprograms intelligent terminal)
+    pub const OSC: u8 = 0x9D;
+    /// Privacy Message (password verification), terminated by ST
+    pub const PM: u8 = 0x9E;
+    /// Application Program Command (to word processor), term by ST
+    pub const APC: u8 = 0x9F;
 }
 
 #[cfg(test)]
 mod tests {
     mod state {
-        use super::super::StateEx;
-
         use muxr::state::{Col, Row, State};
 
         #[test]
         fn print_basic() {
             let mut state = State::default();
-            state.print('c').unwrap();
+            state.print('c');
 
             assert_eq!(state.cursor.position, (Row(0), Col(1)));
 
@@ -171,7 +263,7 @@ mod tests {
         #[test]
         fn print_wrap() {
             let mut state = State::with_dimensions(Row(2), Col(1));
-            state.print('c').unwrap();
+            state.print('c');
 
             assert_eq!(state.cursor.position, (Row(1), Col(0)));
 
@@ -188,7 +280,7 @@ mod tests {
 
             state.cursor.position = (Row(2), Col(0));
 
-            state.print('c').unwrap();
+            state.print('c');
 
             assert_eq!(state.cursor.position, (Row(2), Col(0)));
 

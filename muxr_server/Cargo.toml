@@ -12,11 +12,13 @@ lazy_static = "1.0.2"
 mio = "0.6.15"
 muxr = { version = "0.1.0", path = "../muxr" }
 nix = "0.15.0"
-tokio = "0.1.7"
-tokio-codec = "0.1.0"
-tokio-io = "0.1.7"
 vte = "0.3.2"
 static_assertions = "1.0.0"
+tokio = { version = "0.2.0-alpha.6", features = ["process"] }
+tokio-io = "0.2.0-alpha.6"
+tokio-net = "0.2.0-alpha.6"
+futures-util-preview = "0.3.0-alpha.19"
+bincode = "1.2.0"
 
 [build-dependencies]
 cc = "1.0.18"

@@ -1,4 +1,3 @@
-extern crate bytes;
 extern crate daemonize;
 #[macro_use]
 extern crate error_chain;
@@ -7,9 +6,6 @@ extern crate lazy_static;
 extern crate mio;
 extern crate muxr;
 extern crate nix;
-extern crate tokio;
-extern crate tokio_codec;
-extern crate tokio_io;
 extern crate vte;
 
 mod config;
@@ -17,21 +13,21 @@ mod error;
 mod pty;
 mod server;
 mod term;
-mod uds;
 
 use error::*;
 use pty::CommandTty;
-use term::Apply;
+
+use futures_util::pin_mut;
+use futures_util::try_future::{self, TryFutureExt};
 
 use muxr::state::State;
 
 use std::fs::File;
 use std::path::PathBuf;
-use std::process::Command;
+use std::sync::Arc;
 
-use tokio::prelude::*;
-
-use tokio_codec::Framed;
+use tokio::net::process::Command;
+use tokio::sync::Mutex;
 
 quick_main!(run);
 
@@ -39,51 +35,61 @@ fn run() -> Result<()> {
     let stdout = File::create("/tmp/daemon.out").unwrap();
     let stderr = File::create("/tmp/daemon.err").unwrap();
 
-    let daemonize = daemonize::Daemonize::new()
+    daemonize::Daemonize::new()
         .stdout(stdout)
         .stderr(stderr)
         .start()
         .chain_err(|| "unable to daemonize")?;
 
+    async_run()
+}
+
+#[tokio::main]
+async fn async_run() -> Result<()> {
     let config = config::Server {
         socket_path: PathBuf::from("/tmp/muxr.sock"),
     };
 
-    let mut server = server::Server::new(config);
+    let state = Arc::new(Mutex::new(State::default()));
 
-    server.start()?;
+    let server = server::Server::new(config, state.clone())?;
 
-    std::thread::sleep(std::time::Duration::from_secs(300));
+    let mut args = std::env::args_os();
 
-    server.stop()?;
+    args.next().chain_err(|| "malformed command line")?;
 
-    Ok(())
-}
-
-fn old_run() {
-    println!("creating pty");
+    let cmd = args.next().chain_err(|| "missing executable path")?;
 
     let (master, slave) = pty::pair().unwrap();
 
-    println!("starting process");
-    Command::new("echo")
-        .arg("hello world")
+    let server_run = server.run();
+
+    let cmd_run = Command::new(cmd)
+        .args(args)
         .tty(slave)
         .unwrap()
         .status()
-        .unwrap();
+        .map_err(Error::from);
 
-    let (writer, reader) = Framed::new(master, term::codec::VteCodec::new()).split();
+    let term_run = term::Term::new(master, state).run();
 
-    let mut state = State::default();
+    pin_mut!(cmd_run);
+    pin_mut!(server_run);
 
-    let app = reader
-        .for_each(move |item| {
-            println!("TRM: {:?}", item);
-            state.apply(item)?;
-            Ok(())
-        })
-        .map_err(|x| println!("ERR: {}", x));
+    // TODO: Something with exit status
 
-    tokio::run(app);
+    let part_1 = async {
+        match try_future::try_select(cmd_run, server_run).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.factor_first().0),
+        }
+    };
+
+    pin_mut!(part_1);
+    pin_mut!(term_run);
+
+    match try_future::try_select(part_1, term_run).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.factor_first().0),
+    }
 }

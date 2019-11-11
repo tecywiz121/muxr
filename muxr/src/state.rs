@@ -228,4 +228,44 @@ impl State {
             self.top += 1;
         }
     }
+
+    pub fn goto_row(&mut self, row: Row) {
+        self.cursor.position.0 = row;
+    }
+
+    pub fn goto_col(&mut self, col: Col) {
+        self.cursor.position.1 = col;
+    }
+
+    pub fn print(&mut self, c: char) {
+        let (row, col) = self.cursor.position;
+
+        {
+            let cell = self.cell_mut(row, col);
+
+            if let Some(cell) = cell {
+                cell.content = Some(c);
+            }
+        }
+
+        if col >= self.columns() - Col(1) {
+            self.cursor.position.0 += Row(1);
+            self.cursor.position.1 = Col(0);
+
+            if self.cursor.position.0 >= self.rows() {
+                self.cursor.position.0 = self.rows() - Row(1);
+                self.scroll_down(Row(1));
+            }
+        } else {
+            self.cursor.position.1 += Col(1);
+        }
+    }
+
+    pub fn carriage_return(&mut self) {
+        self.cursor.position.1 = Col(0);
+    }
+
+    pub fn linefeed(&mut self) {
+        self.cursor.position.0 += Row(1);
+    }
 }

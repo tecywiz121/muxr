@@ -1,3 +1,5 @@
+use bincode;
+
 error_chain! {
     links {
         Muxr(::muxr::error::Error, ::muxr::error::ErrorKind);
@@ -6,5 +8,6 @@ error_chain! {
     foreign_links {
         Nix(::nix::Error);
         Io(::std::io::Error);
+        Bincode(bincode::Error);
     }
 }

@@ -1,158 +1,171 @@
-mod acceptor;
 mod client;
 
+use bincode;
+
 use crate::config;
-use crate::error::*;
+use crate::error::{Result, ResultExt};
 
-use self::acceptor::Acceptor;
+use futures_util::stream::StreamExt;
+use futures_util::{future, try_future};
 
-use std::os::unix::net::UnixStream;
-use std::sync::{Arc, RwLock};
-use std::thread::{self, JoinHandle};
+use muxr::state::State;
 
-#[derive(Debug)]
-struct Started {
-    acceptor: JoinHandle<Result<()>>,
+use self::client::Client;
 
-    client_threads: Vec<JoinHandle<Result<()>>>,
-    clients: Vec<client::Sender>,
-}
+use std::sync::Arc;
+use std::time::Duration;
 
-impl Started {
-    fn join_all(self) -> thread::Result<Result<()>> {
-        if let Err(e) = self.acceptor.join()? {
-            return Ok(Err(e));
-        }
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::mpsc::{channel, Receiver};
+use tokio::sync::Mutex;
+use tokio::timer::Interval;
 
-        for client in self.client_threads.into_iter() {
-            if let Err(e) = client.join()? {
-                return Ok(Err(e));
-            }
-        }
-
-        Ok(Ok(()))
-    }
-}
+use tokio_io::split::{ReadHalf, WriteHalf};
 
 #[derive(Debug)]
-enum Status {
-    Stopped,
-    Stopping,
-
-    Starting,
-    Started(Started),
-}
-
-impl Status {
-    pub fn is_stopped(&self) -> bool {
-        match self {
-            Status::Stopped => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_stopping(&self) -> bool {
-        match self {
-            Status::Stopping => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_starting(&self) -> bool {
-        match self {
-            Status::Starting => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_started(&self) -> bool {
-        match self {
-            Status::Started(_) => true,
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct State {
+struct Inner {
     config: config::Server,
-    status: Status,
+    clients: Mutex<Vec<Client>>,
+    state: Arc<Mutex<State>>,
+    socket: Mutex<Option<UnixListener>>,
 }
 
-impl State {
-    fn started_mut(&mut self) -> Option<&mut Started> {
-        match self.status {
-            Status::Started(ref mut started) => Some(started),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Server {
-    state: Arc<RwLock<State>>,
-}
+#[derive(Debug, Clone)]
+pub struct Server(Arc<Inner>);
 
 impl Server {
-    pub fn new(config: config::Server) -> Self {
-        let state = State {
-            config,
-            status: Status::Stopped,
-        };
+    pub fn new(config: config::Server, state: Arc<Mutex<State>>) -> Result<Self> {
+        let socket = UnixListener::bind(&config.socket_path)?;
 
-        Server {
-            state: Arc::new(RwLock::new(state)),
-        }
+        let server = Server(Arc::new(Inner {
+            clients: Default::default(),
+            socket: Mutex::new(Some(socket)),
+            state,
+            config,
+        }));
+
+        Ok(server)
     }
 
-    pub fn start(&mut self) -> Result<()> {
-        let mut acceptor = Acceptor::new(self.state.clone())?;
+    pub async fn run(self) -> Result<()> {
+        let accept = self.clone().accept_loop();
+        let state = self.clone().state_loop();
 
-        let mut state = self.state.write().expect("state lock poisoned");
+        try_future::try_join(accept, state).await.map(|_| ())
+    }
 
-        if !state.status.is_stopped() {
-            bail!("server must be completely stopped before starting");
+    async fn accept_loop(self) -> Result<()> {
+        let socket = self
+            .0
+            .socket
+            .lock()
+            .await
+            .take()
+            .chain_err(|| "server can only be started once")?;
+
+        let mut incoming = socket.incoming();
+
+        while let Some(item) = incoming.next().await {
+            let client = match item {
+                Ok(c) => c,
+                Err(e) => {
+                    // TODO: Better logging?
+                    eprintln!("accept_loop error: {:?}", e);
+                    continue;
+                }
+            };
+
+            eprintln!("Accepted: {:?}", client);
+
+            let (read, write) = io::split(client);
+
+            let (write_send, write_recv) = channel(1);
+
+            tokio::spawn(self.clone().client_read_loop(read));
+            tokio::spawn(self.clone().client_write_loop(write, write_recv));
+
+            self.0.clients.lock().await.push(Client::new(write_send));
         }
-
-        state.status = Status::Starting;
-
-        let acceptor_handle = thread::Builder::new()
-            .name("acceptor".to_string())
-            .spawn(move || acceptor.run())
-            .chain_err(|| "unable to start acceptor thread")?;
-
-        let started = Started {
-            acceptor: acceptor_handle,
-            clients: vec![],
-            client_threads: vec![],
-        };
-
-        state.status = Status::Started(started);
 
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<()> {
-        let threads = {
-            let mut state = self.state.write().expect("state lock poisoned");
-            let status = std::mem::replace(&mut state.status, Status::Stopping);
+    async fn state_loop(self) -> Result<()> {
+        const DELAY: Duration = Duration::from_millis(5);
 
-            match status {
-                Status::Started(t) => t,
-                _ => {
-                    state.status = status;
-                    bail!("server must be started before stopping");
+        let mut interval = Interval::new_interval(DELAY);
+
+        while let Some(_) = interval.next().await {
+            // TODO: Don't copy the byte buffer for each client. Use an Arc, or
+            // the bytes crate.
+
+            let bytes = {
+                const USZ_LEN: usize = std::mem::size_of::<usize>();
+
+                let mut buffer = vec![0u8; USZ_LEN];
+
+                let state = self.0.state.lock().await;
+                bincode::serialize_into(&mut buffer, &*state)?;
+
+                let len = buffer.len().to_ne_bytes();
+                buffer[0..USZ_LEN].copy_from_slice(&len);
+
+                buffer
+            };
+
+            let mut clients = self.0.clients.lock().await;
+
+            let sends = clients.drain(..).map(|mut client| {
+                async {
+                    eprintln!("sending...");
+
+                    match client.send(bytes.clone()).await {
+                        Ok(_) => Some(client),
+                        Err(e) => {
+                            eprintln!("state_loop error: {:?}", e);
+                            None
+                        }
+                    }
                 }
-            }
-        };
+            });
 
-        threads
-            .join_all()
-            .expect("unable to join all threads")
-            .expect("thread returned an error");
+            *clients = future::join_all(sends)
+                .await
+                .into_iter()
+                .filter_map(|x| x)
+                .collect();
+        }
 
-        let mut state = self.state.write().expect("state lock poisoned");
-        state.status = Status::Stopped;
+        Ok(())
+    }
+
+    async fn client_read_loop(self, client: ReadHalf<UnixStream>) {
+        self.client_read(client).await.unwrap();
+    }
+
+    async fn client_read(self, mut client: ReadHalf<UnixStream>) -> Result<()> {
+        let mut data = Vec::new();
+
+        // TODO: Do something with the incoming data
+        client.read_to_end(&mut data).await?;
+
+        Ok(())
+    }
+
+    async fn client_write_loop(self, client: WriteHalf<UnixStream>, recv: Receiver<Vec<u8>>) {
+        self.client_write(client, recv).await.unwrap();
+    }
+
+    async fn client_write(
+        self,
+        mut client: WriteHalf<UnixStream>,
+        mut recv: Receiver<Vec<u8>>,
+    ) -> Result<()> {
+        while let Some(msg) = recv.recv().await {
+            eprintln!("Writing {} bytes", msg.len());
+            client.write_all(&msg).await?;
+        }
 
         Ok(())
     }
