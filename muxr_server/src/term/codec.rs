@@ -1,23 +1,36 @@
-use crate::error::*;
+use bytes::BytesMut;
 
-use muxr::state::{Col, Color, CursorStyle, Row, State};
+use crate::error::*;
+use crate::term::*;
+
+use std::collections::VecDeque;
+
+use tokio_io::codec::{Decoder, Encoder};
 
 use vte::{Parser, Perform};
 
-#[derive(Debug)]
-pub struct StatePerform<'a>(pub &'a mut State);
+#[derive(Debug, Default)]
+pub struct Performer(VecDeque<FromTerm>);
 
-impl<'a> Perform for StatePerform<'a> {
+impl Perform for Performer {
     fn print(&mut self, c: char) {
-        self.0.print(c)
+        self.0.push_back(FromTerm::Print(c));
     }
 
     fn execute(&mut self, byte: u8) {
-        match byte {
-            C0::CR => self.0.carriage_return(),
-            C0::LF | C0::VT | C0::FF => self.0.linefeed(),
-            _ => eprintln!("[UNIMPL] execute({:02x})", byte),
-        }
+        let item = match byte {
+            C0::HT => FromTerm::PutTab(1),
+            C0::BS => FromTerm::Backspace,
+            C0::CR => FromTerm::CarriageReturn,
+            C0::LF | C0::VT | C0::FF => FromTerm::Linefeed,
+            C1::NEL => FromTerm::Newline,
+            _ => {
+                eprintln!("[UNIMPL] execute({:02x})", byte);
+                return;
+            }
+        };
+
+        self.0.push_back(item);
     }
 
     fn hook(&mut self, a: &[i64], b: &[u8], c: bool) {
@@ -48,7 +61,7 @@ impl<'a> Perform for StatePerform<'a> {
 /// C0 set of 7-bit control characters (from ANSI X3.4-1977).
 /// Stolen from https://github.com/jwilm/alacritty/blob/96b3d737a8ee1805ec548671a6ba8f219b2c2934/src/ansi.rs
 #[allow(non_snake_case)]
-mod C0 {
+pub mod C0 {
     /// Null filler, terminal should ignore this character
     pub const NUL: u8 = 0x00;
     /// Start of Header
@@ -124,7 +137,7 @@ mod C0 {
 /// 0x98 (X), 0x99 (Y) are reserved
 /// 0x9a (Z) is 'reserved', but causes DEC terminals to respond with DA codes
 #[allow(non_snake_case)]
-mod C1 {
+pub mod C1 {
     /// Reserved
     pub const PAD: u8 = 0x80;
     /// Reserved
@@ -189,58 +202,4 @@ mod C1 {
     pub const PM: u8 = 0x9E;
     /// Application Program Command (to word processor), term by ST
     pub const APC: u8 = 0x9F;
-}
-
-#[cfg(test)]
-mod tests {
-    mod state {
-        use super::super::StateEx;
-
-        use muxr::state::{Col, Row, State};
-
-        #[test]
-        fn print_basic() {
-            let mut state = State::default();
-            state.print('c').unwrap();
-
-            assert_eq!(state.cursor.position, (Row(0), Col(1)));
-
-            let cell = state.cell(Row(0), Col(0)).unwrap();
-            assert_eq!(cell.content, Some('c'));
-        }
-
-        #[test]
-        fn print_wrap() {
-            let mut state = State::with_dimensions(Row(2), Col(1));
-            state.print('c').unwrap();
-
-            assert_eq!(state.cursor.position, (Row(1), Col(0)));
-
-            let cell = state.cell(Row(0), Col(0)).unwrap();
-            assert_eq!(cell.content, Some('c'));
-        }
-
-        #[test]
-        fn print_scroll() {
-            let mut state = State::with_dimensions(Row(3), Col(1));
-
-            state.cell_mut(Row(0), Col(0)).unwrap().content = Some('a');
-            state.cell_mut(Row(1), Col(0)).unwrap().content = Some('b');
-
-            state.cursor.position = (Row(2), Col(0));
-
-            state.print('c').unwrap();
-
-            assert_eq!(state.cursor.position, (Row(2), Col(0)));
-
-            let cell = state.cell(Row(0), Col(0)).unwrap();
-            assert_eq!(cell.content, Some('b'));
-
-            let cell = state.cell(Row(1), Col(0)).unwrap();
-            assert_eq!(cell.content, Some('c'));
-
-            let cell = state.cell(Row(2), Col(0)).unwrap();
-            assert_eq!(cell.content, None);
-        }
-    }
 }

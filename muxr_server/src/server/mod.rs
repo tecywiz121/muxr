@@ -4,6 +4,8 @@ mod client;
 use crate::config;
 use crate::error::*;
 
+use muxr::state::State as MuxrState;
+
 use self::acceptor::Acceptor;
 
 use std::os::unix::net::UnixStream;
@@ -130,6 +132,10 @@ impl Server {
         state.status = Status::Started(started);
 
         Ok(())
+    }
+
+    pub fn publish(&mut self, state: &MuxrState) {
+        unimplemented!()
     }
 
     pub fn stop(&mut self) -> Result<()> {
