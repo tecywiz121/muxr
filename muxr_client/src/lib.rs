@@ -1,19 +1,17 @@
 #[macro_use]
 extern crate error_chain;
-extern crate muxr;
-extern crate termion;
 
 mod error;
 mod render;
 
-use muxr::state::{CellStyle, Col, Color, Row, State};
+use muxr_core::state::{CellStyle, Col, Color, Row, State};
 
 use std::io::Write;
 
 use termion::raw::IntoRawMode;
 use termion::{get_tty, terminal_size};
 
-fn main() {
+pub fn run() {
     let mut state = State::default();
 
     let (cols, rows) = terminal_size().unwrap();

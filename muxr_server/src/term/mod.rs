@@ -1,7 +1,7 @@
 use crate::error::*;
 use crate::pty;
 
-use muxr::state::State;
+use muxr_core::state::State;
 
 use std::sync::Arc;
 

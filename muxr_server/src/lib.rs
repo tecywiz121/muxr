@@ -1,12 +1,7 @@
-extern crate daemonize;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
-extern crate mio;
-extern crate muxr;
-extern crate nix;
-extern crate vte;
 
 mod config;
 mod error;
@@ -14,13 +9,13 @@ mod pty;
 mod server;
 mod term;
 
-use error::*;
-use pty::CommandTty;
+use crate::error::*;
+use crate::pty::CommandTty;
 
 use futures_util::pin_mut;
 use futures_util::try_future::{self, TryFutureExt};
 
-use muxr::state::State;
+use muxr_core::state::State;
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -29,9 +24,7 @@ use std::sync::Arc;
 use tokio::net::process::Command;
 use tokio::sync::Mutex;
 
-quick_main!(run);
-
-fn run() -> Result<()> {
+pub fn run() -> Result<()> {
     let stdout = File::create("/tmp/daemon.out").unwrap();
     let stderr = File::create("/tmp/daemon.err").unwrap();
 

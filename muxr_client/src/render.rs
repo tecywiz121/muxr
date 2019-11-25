@@ -1,6 +1,6 @@
-use error::*;
+use crate::error::*;
 
-use muxr::state::{Cell, CellStyle, Col, Color, Row, State};
+use muxr_core::state::{Cell, CellStyle, Col, Color, Row, State};
 
 use std::io::Write;
 

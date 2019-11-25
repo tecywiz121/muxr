@@ -2,11 +2,19 @@
 name = "muxr"
 version = "0.1.0"
 authors = ["Sam Wilson <tecywiz121@hotmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.0.3"
-derive_more = "0.15.0"
+muxr_client = { version = "0.1.0", path = "../muxr_client" }
+muxr_server = { version = "0.1.0", path = "../muxr_server" }
 error-chain = "0.12.0"
-ndarray = { version = "0.13.0", features = ["serde-1"] }
-serde = "1.0.70"
-serde_derive = "1.0.70"
+
+[[bin]]
+path = "src/client.rs"
+name = "muxr"
+
+[[bin]]
+path = "src/server.rs"
+name = "muxr_server"

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "muxr",
+    "muxr_core",
     "muxr_client",
     "muxr_server",
 ]

@@ -8,7 +8,7 @@ use crate::error::{Result, ResultExt};
 use futures_util::stream::StreamExt;
 use futures_util::{future, try_future};
 
-use muxr::state::State;
+use muxr_core::state::State;
 
 use self::client::Client;
 

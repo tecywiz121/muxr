@@ -2,7 +2,7 @@ use bincode;
 
 error_chain! {
     links {
-        Muxr(::muxr::error::Error, ::muxr::error::ErrorKind);
+        Muxr(::muxr_core::error::Error, ::muxr_core::error::ErrorKind);
     }
 
     foreign_links {
