@@ -8,3 +8,5 @@ edition = "2018"
 error-chain = "0.12.0"
 muxr_core = { version = "0.1.0", path = "../muxr_core" }
 termion = "1.5.1"
+tokio = { version = "0.2.0-alpha.6" }
+bincode = "1.2.0"

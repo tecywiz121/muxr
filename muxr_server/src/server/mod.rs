@@ -92,7 +92,7 @@ impl Server {
     }
 
     async fn state_loop(self) -> Result<()> {
-        const DELAY: Duration = Duration::from_millis(5);
+        const DELAY: Duration = Duration::from_millis(100);
 
         let mut interval = Interval::new_interval(DELAY);
 
