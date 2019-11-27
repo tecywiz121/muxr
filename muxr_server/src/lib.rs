@@ -12,8 +12,8 @@ mod term;
 use crate::error::*;
 use crate::pty::CommandTty;
 
+use futures_util::future::{self, TryFutureExt};
 use futures_util::pin_mut;
-use futures_util::try_future::{self, TryFutureExt};
 
 use muxr_core::state::State;
 
@@ -21,7 +21,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::net::process::Command;
+use tokio::process::Command;
 use tokio::sync::Mutex;
 
 pub fn run() -> Result<()> {
@@ -72,7 +72,7 @@ async fn async_run() -> Result<()> {
     // TODO: Something with exit status
 
     let part_1 = async {
-        match try_future::try_select(cmd_run, server_run).await {
+        match future::try_select(cmd_run, server_run).await {
             Ok(_) => Ok(()),
             Err(e) => Err(e.factor_first().0),
         }
@@ -81,7 +81,7 @@ async fn async_run() -> Result<()> {
     pin_mut!(part_1);
     pin_mut!(term_run);
 
-    match try_future::try_select(part_1, term_run).await {
+    match future::try_select(part_1, term_run).await {
         Ok(_) => Ok(()),
         Err(e) => Err(e.factor_first().0),
     }

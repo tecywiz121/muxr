@@ -5,12 +5,8 @@ use muxr_core::state::State;
 
 use std::sync::Arc;
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, PollEvented, ReadHalf};
 use tokio::sync::Mutex;
-
-use tokio_io::split::ReadHalf;
-
-use tokio_net::util::PollEvented;
 
 use vte::{Parser, Perform};
 
@@ -26,7 +22,7 @@ impl Term {
     }
 
     pub async fn run(self) -> Result<()> {
-        let evented = PollEvented::new(self.master);
+        let evented = PollEvented::new(self.master)?;
         let (read, _) = tokio::io::split(evented);
 
         // TODO: Implement write side

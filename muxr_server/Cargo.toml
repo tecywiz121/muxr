@@ -13,10 +13,8 @@ muxr_core = { version = "0.1.0", path = "../muxr_core" }
 nix = "0.15.0"
 vte = "0.3.2"
 static_assertions = "1.0.0"
-tokio = { version = "0.2.0-alpha.6", features = ["process"] }
-tokio-io = "0.2.0-alpha.6"
-tokio-net = "0.2.0-alpha.6"
-futures-util-preview = "0.3.0-alpha.19"
+tokio = { version = "0.2.1", features = ["macros", "process", "io-util", "net", "sync", "process", "time", "uds", "stream"] }
+futures-util = "0.3.1"
 bincode = "1.2.0"
 
 [build-dependencies]

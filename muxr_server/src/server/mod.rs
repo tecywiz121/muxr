@@ -5,8 +5,8 @@ use bincode;
 use crate::config;
 use crate::error::{Result, ResultExt};
 
+use futures_util::future;
 use futures_util::stream::StreamExt;
-use futures_util::{future, try_future};
 
 use muxr_core::state::State;
 
@@ -15,13 +15,10 @@ use self::client::Client;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio::sync::Mutex;
-use tokio::timer::Interval;
-
-use tokio_io::split::{ReadHalf, WriteHalf};
 
 #[derive(Debug)]
 struct Inner {
@@ -52,11 +49,11 @@ impl Server {
         let accept = self.clone().accept_loop();
         let state = self.clone().state_loop();
 
-        try_future::try_join(accept, state).await.map(|_| ())
+        future::try_join(accept, state).await.map(|_| ())
     }
 
     async fn accept_loop(self) -> Result<()> {
-        let socket = self
+        let mut socket = self
             .0
             .socket
             .lock()
@@ -94,9 +91,11 @@ impl Server {
     async fn state_loop(self) -> Result<()> {
         const DELAY: Duration = Duration::from_millis(100);
 
-        let mut interval = Interval::new_interval(DELAY);
+        let mut interval = tokio::time::interval(DELAY);
 
-        while let Some(_) = interval.next().await {
+        loop {
+            interval.tick().await;
+
             // TODO: Don't copy the byte buffer for each client. Use an Arc, or
             // the bytes crate.
 
@@ -136,8 +135,6 @@ impl Server {
                 .filter_map(|x| x)
                 .collect();
         }
-
-        Ok(())
     }
 
     async fn client_read_loop(self, client: ReadHalf<UnixStream>) {

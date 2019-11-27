@@ -11,7 +11,7 @@ impl Client {
         Self { sender }
     }
 
-    pub async fn send(&mut self, data: Vec<u8>) -> Result<(), SendError> {
+    pub async fn send(&mut self, data: Vec<u8>) -> Result<(), SendError<Vec<u8>>> {
         self.sender.send(data).await
     }
 }

@@ -17,7 +17,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-use tokio::net::process::Command as TokioCommand;
+use tokio::process::Command as TokioCommand;
 
 mod pts_namer {
     use crate::error::*;
