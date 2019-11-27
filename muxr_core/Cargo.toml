@@ -2,6 +2,7 @@
 name = "muxr_core"
 version = "0.1.0"
 authors = ["Sam Wilson <tecywiz121@hotmail.com>"]
+edition = "2018"
 
 [dependencies]
 bitflags = "1.0.3"
@@ -10,3 +11,4 @@ error-chain = "0.12.0"
 ndarray = { version = "0.13.0", features = ["serde-1"] }
 serde = "1.0.70"
 serde_derive = "1.0.70"
+bincode = "1.2.0"

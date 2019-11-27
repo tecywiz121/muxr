@@ -1,11 +1,15 @@
 use crate::error::*;
 use crate::pty;
 
+use futures_util::{future, pin_mut};
+
+use muxr_core::input::{Event, Key};
 use muxr_core::state::State;
 
 use std::sync::Arc;
 
-use tokio::io::{AsyncReadExt, PollEvented, ReadHalf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, PollEvented, ReadHalf, WriteHalf};
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
 
 use vte::{Parser, Perform};
@@ -21,13 +25,35 @@ impl Term {
         Term { state, master }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(self, recv: Receiver<Event>) -> Result<()> {
         let evented = PollEvented::new(self.master)?;
-        let (read, _) = tokio::io::split(evented);
+        let (read, write) = tokio::io::split(evented);
 
-        // TODO: Implement write side
+        let f0 = Self::write_loop(recv, write);
+        let f1 = Self::read_loop(self.state.clone(), read);
 
-        Self::read_loop(self.state.clone(), read).await
+        pin_mut!(f0);
+        pin_mut!(f1);
+
+        future::try_join(f0, f1).await.map(|_| ())
+    }
+
+    async fn write_loop(
+        mut recv: Receiver<Event>,
+        mut write: WriteHalf<PollEvented<pty::Master>>,
+    ) -> Result<()> {
+        while let Some(event) = recv.recv().await {
+            match event {
+                Event::Key(Key::Char(c)) => {
+                    let s = c.to_string();
+
+                    write.write_all(s.as_bytes()).await?;
+                }
+                _ => unimplemented!(),
+            }
+        }
+
+        Ok(())
     }
 
     async fn read_loop(

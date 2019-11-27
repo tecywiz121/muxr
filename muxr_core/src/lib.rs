@@ -10,4 +10,6 @@ extern crate serde;
 extern crate serde_derive;
 
 pub mod error;
+pub mod input;
+pub mod msg;
 pub mod state;

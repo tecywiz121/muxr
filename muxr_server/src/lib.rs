@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::process::Command;
+use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
 pub fn run() -> Result<()> {
@@ -45,7 +46,9 @@ async fn async_run() -> Result<()> {
 
     let state = Arc::new(Mutex::new(State::default()));
 
-    let server = server::Server::new(config, state.clone())?;
+    let (input_send, input_recv) = mpsc::channel(128);
+
+    let server = server::Server::new(config, state.clone(), input_send)?;
 
     let mut args = std::env::args_os();
 
@@ -64,7 +67,7 @@ async fn async_run() -> Result<()> {
         .status()
         .map_err(Error::from);
 
-    let term_run = term::Term::new(master, state).run();
+    let term_run = term::Term::new(master, state).run(input_recv);
 
     pin_mut!(cmd_run);
     pin_mut!(server_run);

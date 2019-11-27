@@ -1,23 +1,24 @@
 mod client;
 
-use bincode;
-
 use crate::config;
 use crate::error::{Result, ResultExt};
 
 use futures_util::future;
 use futures_util::stream::StreamExt;
 
+use muxr_core::input::{Event, Key};
 use muxr_core::state::State;
 
 use self::client::Client;
+
+use serde::de::DeserializeOwned;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc::{channel, Receiver};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
@@ -26,18 +27,24 @@ struct Inner {
     clients: Mutex<Vec<Client>>,
     state: Arc<Mutex<State>>,
     socket: Mutex<Option<UnixListener>>,
+    input_sender: Sender<Event>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Server(Arc<Inner>);
 
 impl Server {
-    pub fn new(config: config::Server, state: Arc<Mutex<State>>) -> Result<Self> {
+    pub fn new(
+        config: config::Server,
+        state: Arc<Mutex<State>>,
+        input_sender: Sender<Event>,
+    ) -> Result<Self> {
         let socket = UnixListener::bind(&config.socket_path)?;
 
         let server = Server(Arc::new(Inner {
             clients: Default::default(),
             socket: Mutex::new(Some(socket)),
+            input_sender,
             state,
             config,
         }));
@@ -79,7 +86,10 @@ impl Server {
 
             let (write_send, write_recv) = channel(1);
 
-            tokio::spawn(self.clone().client_read_loop(read));
+            tokio::spawn(
+                self.clone()
+                    .client_read_loop(read, self.0.input_sender.clone()),
+            );
             tokio::spawn(self.clone().client_write_loop(write, write_recv));
 
             self.0.clients.lock().await.push(Client::new(write_send));
@@ -100,25 +110,14 @@ impl Server {
             // the bytes crate.
 
             let bytes = {
-                const USZ_LEN: usize = std::mem::size_of::<usize>();
-
-                let mut buffer = vec![0u8; USZ_LEN];
-
                 let state = self.0.state.lock().await;
-                bincode::serialize_into(&mut buffer, &*state)?;
-
-                let len = buffer.len().to_ne_bytes();
-                buffer[0..USZ_LEN].copy_from_slice(&len);
-
-                buffer
+                muxr_core::msg::serialize(&*state)?
             };
 
             let mut clients = self.0.clients.lock().await;
 
             let sends = clients.drain(..).map(|mut client| {
                 async {
-                    eprintln!("sending...");
-
                     match client.send(bytes.clone()).await {
                         Ok(_) => Some(client),
                         Err(e) => {
@@ -137,15 +136,27 @@ impl Server {
         }
     }
 
-    async fn client_read_loop(self, client: ReadHalf<UnixStream>) {
-        self.client_read(client).await.unwrap();
+    async fn client_read_loop(self, client: ReadHalf<UnixStream>, sender: Sender<Event>) {
+        self.client_read(client, sender).await.unwrap();
     }
 
-    async fn client_read(self, mut client: ReadHalf<UnixStream>) -> Result<()> {
-        let mut data = Vec::new();
+    async fn client_read(
+        self,
+        mut client: ReadHalf<UnixStream>,
+        mut sender: Sender<Event>,
+    ) -> Result<()> {
+        loop {
+            let event: Event = deserialize_from(&mut client).await?;
 
-        // TODO: Do something with the incoming data
-        client.read_to_end(&mut data).await?;
+            match event {
+                Event::Key(Key::Char(k)) => {
+                    if let Err(_) = sender.send(Event::Key(Key::Char(k))).await {
+                        break;
+                    }
+                }
+                _ => (), // TODO: Handle all other types of characters.
+            }
+        }
 
         Ok(())
     }
@@ -160,10 +171,21 @@ impl Server {
         mut recv: Receiver<Vec<u8>>,
     ) -> Result<()> {
         while let Some(msg) = recv.recv().await {
-            eprintln!("Writing {} bytes", msg.len());
             client.write_all(&msg).await?;
         }
 
         Ok(())
     }
+}
+
+async fn deserialize_from<T: DeserializeOwned>(reader: &mut ReadHalf<UnixStream>) -> Result<T> {
+    let mut sz_buf = [0u8; std::mem::size_of::<usize>()];
+    reader.read_exact(&mut sz_buf).await?;
+
+    let sz = usize::from_ne_bytes(sz_buf) - sz_buf.len();
+    let mut msg_buf = vec![0u8; sz];
+
+    reader.read_exact(&mut msg_buf).await?;
+
+    Ok(bincode::deserialize(&msg_buf)?)
 }
