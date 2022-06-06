@@ -10,7 +10,7 @@ error-chain = "0.12.0"
 lazy_static = "1.0.2"
 mio = "0.6.20"
 muxr_core = { version = "0.1.0", path = "../muxr_core" }
-nix = "0.15.0"
+nix = "0.20.2"
 vte = "0.3.2"
 static_assertions = "1.0.0"
 tokio = { version = "0.2.1", features = ["macros", "process", "io-util", "net", "sync", "process", "time", "uds", "stream"] }
