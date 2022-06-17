@@ -14,7 +14,7 @@ nix = "0.15.0"
 vte = "0.3.2"
 static_assertions = "1.0.0"
 tokio = { version = "0.2.1", features = ["macros", "process", "io-util", "net", "sync", "process", "time", "uds", "stream"] }
-futures-util = "0.3.1"
+futures-util = "0.3.11"
 serde = "1.0"
 bincode = "1.2.0"
 
